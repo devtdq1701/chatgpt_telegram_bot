@@ -130,18 +130,17 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
                 else:
                     text = f"✍️ <i>Note:</i> Your current dialog is too long, so <b>{n_first_dialog_messages_removed} first messages</b> were removed from the context.\n Send /new command to start new dialog"
                 await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+            try:
+                await update.message.reply_text(answer, parse_mode=ParseMode.HTML)
+            except telegram.error.BadRequest:
+                # answer has invalid characters, so we send it without parse_mode
+                await update.message.reply_text(answer)
 
     except Exception as e:
         error_text = f"Something went wrong during completion. Reason: {e}"
         logger.error(error_text)
         await update.message.reply_text(error_text)
         return
-
-    try:
-        await update.message.reply_text(answer, parse_mode=ParseMode.HTML)
-    except telegram.error.BadRequest:
-        # answer has invalid characters, so we send it without parse_mode
-        await update.message.reply_text(answer)
 
 
 async def new_dialog_handle(update: Update, context: CallbackContext):
