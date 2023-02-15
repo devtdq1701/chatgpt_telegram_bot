@@ -32,6 +32,7 @@ HELP_MESSAGE = """Commands:
 ⚪ /mode – Select chat mode
 ⚪ /balance – Show balance
 ⚪ /help – Show help
+⚪ /ask – Ask a question
 """
 
 async def register_user_if_not_exists(update: Update, context: CallbackContext, user: User):
@@ -47,16 +48,17 @@ async def register_user_if_not_exists(update: Update, context: CallbackContext, 
 
 async def start_handle(update: Update, context: CallbackContext):
     await register_user_if_not_exists(update, context, update.message.from_user)
+
     user_id = update.message.from_user.id
-    
+
     db.set_user_attribute(user_id, "last_interaction", datetime.now())
     db.start_new_dialog(user_id)
-    
+
     reply_text = "Hi! I'm <b>ChatGPT</b> bot implemented with GPT-3.5 OpenAI API 🤖\n\n"
     reply_text += HELP_MESSAGE
 
     reply_text += "\nAnd now... ask me anything!"
-    
+
     await update.message.reply_text(reply_text, parse_mode=ParseMode.HTML)
 
 
@@ -88,7 +90,7 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
     if update.edited_message is not None:
         await edited_message_handle(update, context)
         return
-        
+
     await register_user_if_not_exists(update, context, update.message.from_user)
     user_id = update.message.from_user.id
 
@@ -104,22 +106,23 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
 
     try:
         message = message or update.message.text
+        if message.startswith("/ask"):
+            message = message[5:]
+            answer, prompt, n_used_tokens, n_first_dialog_messages_removed = chatgpt.ChatGPT().send_message(
+                message,
+                dialog_messages=db.get_dialog_messages(user_id, dialog_id=None),
+                chat_mode=db.get_user_attribute(user_id, "current_chat_mode"),
+            )
 
-        answer, prompt, n_used_tokens, n_first_dialog_messages_removed = chatgpt.ChatGPT().send_message(
-            message,
-            dialog_messages=db.get_dialog_messages(user_id, dialog_id=None),
-            chat_mode=db.get_user_attribute(user_id, "current_chat_mode"),
-        )
+            # update user data
+            new_dialog_message = {"user": message, "bot": answer, "date": datetime.now()}
+            db.set_dialog_messages(
+                user_id,
+                db.get_dialog_messages(user_id, dialog_id=None) + [new_dialog_message],
+                dialog_id=None
+            )
 
-        # update user data
-        new_dialog_message = {"user": message, "bot": answer, "date": datetime.now()}
-        db.set_dialog_messages(
-            user_id,
-            db.get_dialog_messages(user_id, dialog_id=None) + [new_dialog_message],
-            dialog_id=None
-        )
-
-        db.set_user_attribute(user_id, "n_used_tokens", n_used_tokens + db.get_user_attribute(user_id, "n_used_tokens"))
+            db.set_user_attribute(user_id, "n_used_tokens", n_used_tokens + db.get_user_attribute(user_id, "n_used_tokens"))
 
     except Exception as e:
         error_text = f"Something went wrong during completion. Reason: {e}"
@@ -243,14 +246,14 @@ def run_bot() -> None:
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & user_filter, message_handle))
     application.add_handler(CommandHandler("retry", retry_handle, filters=user_filter))
     application.add_handler(CommandHandler("new", new_dialog_handle, filters=user_filter))
-    
+
     application.add_handler(CommandHandler("mode", show_chat_modes_handle, filters=user_filter))
     application.add_handler(CallbackQueryHandler(set_chat_mode_handle, pattern="^set_chat_mode"))
 
     application.add_handler(CommandHandler("balance", show_balance_handle, filters=user_filter))
-    
+
     application.add_error_handler(error_handle)
-    
+
     # start the bot
     application.run_polling()
 
