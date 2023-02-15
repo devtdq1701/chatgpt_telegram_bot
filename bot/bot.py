@@ -32,7 +32,7 @@ HELP_MESSAGE = """Commands:
 ⚪ /mode – Select chat mode
 ⚪ /balance – Show balance
 ⚪ /help – Show help
-⚪ /ask – Ask a question
+⚪ /help – Ask a question
 """
 
 async def register_user_if_not_exists(update: Update, context: CallbackContext, user: User):
@@ -48,7 +48,6 @@ async def register_user_if_not_exists(update: Update, context: CallbackContext, 
 
 async def start_handle(update: Update, context: CallbackContext):
     await register_user_if_not_exists(update, context, update.message.from_user)
-
     user_id = update.message.from_user.id
 
     db.set_user_attribute(user_id, "last_interaction", datetime.now())
@@ -106,41 +105,42 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
 
     try:
         message = message or update.message.text
-        if message.startswith("/ask"):
-            message = message[5:]
-            answer, prompt, n_used_tokens, n_first_dialog_messages_removed = chatgpt.ChatGPT().send_message(
-                message,
-                dialog_messages=db.get_dialog_messages(user_id, dialog_id=None),
-                chat_mode=db.get_user_attribute(user_id, "current_chat_mode"),
-            )
 
-            # update user data
-            new_dialog_message = {"user": message, "bot": answer, "date": datetime.now()}
-            db.set_dialog_messages(
-                user_id,
-                db.get_dialog_messages(user_id, dialog_id=None) + [new_dialog_message],
-                dialog_id=None
-            )
+        answer, prompt, n_used_tokens, n_first_dialog_messages_removed = chatgpt.ChatGPT().send_message(
+            message,
+            dialog_messages=db.get_dialog_messages(user_id, dialog_id=None),
+            chat_mode=db.get_user_attribute(user_id, "current_chat_mode"),
+        )
 
-            db.set_user_attribute(user_id, "n_used_tokens", n_used_tokens + db.get_user_attribute(user_id, "n_used_tokens"))
-            # send message if some messages were removed from the context
-            if n_first_dialog_messages_removed > 0:
-                if n_first_dialog_messages_removed == 1:
-                    text = "✍️ <i>Note:</i> Your current dialog is too long, so your <b>first message</b> was removed from the context.\n Send /new command to start new dialog"
-                else:
-                    text = f"✍️ <i>Note:</i> Your current dialog is too long, so <b>{n_first_dialog_messages_removed} first messages</b> were removed from the context.\n Send /new command to start new dialog"
-                await update.message.reply_text(text, parse_mode=ParseMode.HTML)
-            try:
-                await update.message.reply_text(answer, parse_mode=ParseMode.HTML)
-            except telegram.error.BadRequest:
-                # answer has invalid characters, so we send it without parse_mode
-                await update.message.reply_text(answer)
+        # update user data
+        new_dialog_message = {"user": message, "bot": answer, "date": datetime.now()}
+        db.set_dialog_messages(
+            user_id,
+            db.get_dialog_messages(user_id, dialog_id=None) + [new_dialog_message],
+            dialog_id=None
+        )
+
+        db.set_user_attribute(user_id, "n_used_tokens", n_used_tokens + db.get_user_attribute(user_id, "n_used_tokens"))
 
     except Exception as e:
         error_text = f"Something went wrong during completion. Reason: {e}"
         logger.error(error_text)
         await update.message.reply_text(error_text)
         return
+
+    # send message if some messages were removed from the context
+    if n_first_dialog_messages_removed > 0:
+        if n_first_dialog_messages_removed == 1:
+            text = "✍️ <i>Note:</i> Your current dialog is too long, so your <b>first message</b> was removed from the context.\n Send /new command to start new dialog"
+        else:
+            text = f"✍️ <i>Note:</i> Your current dialog is too long, so <b>{n_first_dialog_messages_removed} first messages</b> were removed from the context.\n Send /new command to start new dialog"
+        await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+
+    try:
+        await update.message.reply_text(answer, parse_mode=ParseMode.HTML)
+    except telegram.error.BadRequest:
+        # answer has invalid characters, so we send it without parse_mode
+        await update.message.reply_text(answer)
 
 
 async def new_dialog_handle(update: Update, context: CallbackContext):
@@ -241,7 +241,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("start", start_handle, filters=user_filter))
     application.add_handler(CommandHandler("help", help_handle, filters=user_filter))
 
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & user_filter, message_handle))
+    application.add_handler(CommandHandler("ask", message_handle, filters=user_filter))
     application.add_handler(CommandHandler("retry", retry_handle, filters=user_filter))
     application.add_handler(CommandHandler("new", new_dialog_handle, filters=user_filter))
 
