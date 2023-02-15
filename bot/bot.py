@@ -123,20 +123,19 @@ async def message_handle(update: Update, context: CallbackContext, message=None,
             )
 
             db.set_user_attribute(user_id, "n_used_tokens", n_used_tokens + db.get_user_attribute(user_id, "n_used_tokens"))
+            # send message if some messages were removed from the context
+            if n_first_dialog_messages_removed > 0:
+                if n_first_dialog_messages_removed == 1:
+                    text = "✍️ <i>Note:</i> Your current dialog is too long, so your <b>first message</b> was removed from the context.\n Send /new command to start new dialog"
+                else:
+                    text = f"✍️ <i>Note:</i> Your current dialog is too long, so <b>{n_first_dialog_messages_removed} first messages</b> were removed from the context.\n Send /new command to start new dialog"
+                await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
     except Exception as e:
         error_text = f"Something went wrong during completion. Reason: {e}"
         logger.error(error_text)
         await update.message.reply_text(error_text)
         return
-
-    # send message if some messages were removed from the context
-    if n_first_dialog_messages_removed > 0:
-        if n_first_dialog_messages_removed == 1:
-            text = "✍️ <i>Note:</i> Your current dialog is too long, so your <b>first message</b> was removed from the context.\n Send /new command to start new dialog"
-        else:
-            text = f"✍️ <i>Note:</i> Your current dialog is too long, so <b>{n_first_dialog_messages_removed} first messages</b> were removed from the context.\n Send /new command to start new dialog"
-        await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
     try:
         await update.message.reply_text(answer, parse_mode=ParseMode.HTML)
